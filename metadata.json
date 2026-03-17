@@ -1,0 +1,8 @@
+{
+  "name": "TeleClone",
+  "description": "A full-featured Telegram clone with real-time messaging, user authentication, and a polished UI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

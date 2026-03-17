@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user profile in the system.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique ID of the user." },
+        "displayName": { "type": "string", "description": "The name of the user." },
+        "email": { "type": "string", "description": "The email of the user." },
+        "photoURL": { "type": "string", "description": "The profile picture URL." },
+        "lastSeen": { "type": "string", "format": "date-time", "description": "Last time the user was online." },
+        "status": { "type": "string", "description": "User status (online/offline)." }
+      },
+      "required": ["uid", "displayName", "email"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A conversation between users.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs." },
+        "lastMessage": { "type": "string" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["private", "group", "channel"] },
+        "name": { "type": "string", "description": "Group or Channel name." },
+        "description": { "type": "string", "description": "Channel description." },
+        "typing": { "type": "object", "description": "Map of user UIDs to typing status." },
+        "admins": { "type": "array", "items": { "type": "string" }, "description": "List of admin UIDs." },
+        "subscriberCount": { "type": "number" },
+        "isPublic": { "type": "boolean" }
+      },
+      "required": ["participants", "type"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A single message in a chat.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["text", "image", "file"] }
+      },
+      "required": ["chatId", "senderId", "content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "User", "description": "User profiles." },
+    "/chats/{chatId}": { "schema": "Chat", "description": "Chat metadata." },
+    "/chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Messages within a chat." }
+  }
+}

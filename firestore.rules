@@ -1,0 +1,142 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (required, 1-50 chars)
+    //   - email: string (required, valid email)
+    //   - photoURL: string (optional, valid URL)
+    //   - lastSeen: timestamp (optional)
+    //   - status: string (optional, 'online'|'offline')
+    //
+    // Collection: chats
+    // Document ID: {chatId}
+    // Fields:
+    //   - participants: list of strings (required)
+    //   - type: string (required, 'private'|'group'|'channel')
+    //   - lastMessage: string (optional)
+    //   - lastMessageAt: timestamp (optional)
+    //   - name: string (optional)
+    //   - description: string (optional)
+    //   - admins: list of strings (optional)
+    //   - subscriberCount: number (optional)
+    //   - isPublic: boolean (optional)
+    //
+    // Collection: chats/{chatId}/messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - chatId: string (required)
+    //   - senderId: string (required)
+    //   - senderName: string (optional)
+    //   - content: string (required, 1-1000 chars)
+    //   - createdAt: timestamp (required)
+    //   - type: string (required, 'text'|'image'|'file')
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isParticipant(chatId) {
+      return isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+
+    function isAdmin(chatId) {
+      let chat = get(/databases/$(database)/documents/chats/$(chatId)).data;
+      return isAuthenticated() && ('admins' in chat && request.auth.uid in chat.admins);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    function hasOnlyAllowedFields(data, allowedFields) {
+      return data.keys().hasOnly(allowedFields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
+             isValidEmail(data.email) &&
+             (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 200));
+    }
+
+    function isValidChat(data) {
+      return data.participants is list && 
+             data.participants.size() >= 1 &&
+             request.auth.uid in data.participants &&
+             data.type in ['private', 'group', 'channel'];
+    }
+
+    function isValidMessage(chatId, data) {
+      let chat = get(/databases/$(database)/documents/chats/$(chatId)).data;
+      let isChannel = chat.type == 'channel';
+      let isAdminOfChannel = isChannel && ('admins' in chat && request.auth.uid in chat.admins);
+      
+      return data.chatId == chatId &&
+             data.senderId == request.auth.uid &&
+             (!('senderName' in data) || (data.senderName is string && data.senderName.size() <= 100)) &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 1000 &&
+             data.type in ['text', 'image', 'file'] &&
+             (!isChannel || isAdminOfChannel);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Users collection
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(uid) && isValidUser(request.resource.data);
+      allow update: if isOwner(uid) && isValidUser(request.resource.data);
+    }
+
+    // Chats collection
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && (request.auth.uid in resource.data.participants || resource.data.isPublic == true);
+      allow create: if isAuthenticated() && isValidChat(request.resource.data);
+      allow update: if isAuthenticated() && (
+        // Allow updating last message for participants
+        (request.auth.uid in resource.data.participants && hasOnlyAllowedFields(request.resource.data.diff(resource.data).affectedKeys(), ['lastMessage', 'lastMessageAt', 'typing'])) ||
+        // Allow joining public channels
+        (resource.data.type == 'channel' && resource.data.isPublic == true && hasOnlyAllowedFields(request.resource.data.diff(resource.data).affectedKeys(), ['participants', 'subscriberCount']))
+      );
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants || get(/databases/$(database)/documents/chats/$(chatId)).data.isPublic == true);
+        allow create: if isAuthenticated() && isValidMessage(chatId, request.resource.data);
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
