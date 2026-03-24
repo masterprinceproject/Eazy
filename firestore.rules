@@ -22,11 +22,18 @@ service cloud.firestore {
     //   - type: string (required, 'private'|'group'|'channel')
     //   - lastMessage: string (optional)
     //   - lastMessageAt: timestamp (optional)
+    //   - lastMessageSenderId: string (optional)
+    //   - lastMessageReadBy: list of strings (optional)
     //   - name: string (optional)
     //   - description: string (optional)
     //   - admins: list of strings (optional)
     //   - subscriberCount: number (optional)
     //   - isPublic: boolean (optional)
+    //   - activeCall: object (optional)
+    //     - type: string ('audio'|'video')
+    //     - startedAt: timestamp
+    //     - participants: list of strings
+    //     - initiatorId: string
     //
     // Collection: chats/{chatId}/messages
     // Document ID: {messageId}
@@ -37,6 +44,7 @@ service cloud.firestore {
     //   - content: string (required, 1-1000 chars)
     //   - createdAt: timestamp (required)
     //   - type: string (required, 'text'|'image'|'file')
+    //   - readBy: list of strings (optional)
     //
     // ===============================================================
 
@@ -56,9 +64,16 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
     }
 
-    function isAdmin(chatId) {
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          request.auth.uid == 'ai-assistant-bot' ||
+          (request.auth.token.email == "masterprincecheta207@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isChatAdmin(chatId) {
       let chat = get(/databases/$(database)/documents/chats/$(chatId)).data;
-      return isAuthenticated() && ('admins' in chat && request.auth.uid in chat.admins);
+      return isAuthenticated() && (('admins' in chat && request.auth.uid in chat.admins) || isAdmin());
     }
 
     function isValidEmail(email) {
@@ -77,32 +92,62 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
 
-    function isValidUser(data) {
-      return data.uid == request.auth.uid &&
-             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
+    function isValidUser(data, uid) {
+      return (uid == request.auth.uid || uid == 'ai-assistant-bot' || isAdmin()) &&
+             data.uid == uid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
              isValidEmail(data.email) &&
              (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
-             (!('bio' in data) || (data.bio is string && data.bio.size() <= 200));
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 500)) &&
+             (!('isPremium' in data) || data.isPremium is bool) &&
+             (!('isBanned' in data) || data.isBanned is bool) &&
+             (!('status' in data) || (data.status in ['online', 'offline'])) &&
+             (!('lastSeen' in data) || data.lastSeen is timestamp || data.lastSeen is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('role' in data) || (data.role in ['admin', 'user'] && (data.role == 'user' || isAdmin()))) &&
+             (!('settings' in data) || data.settings is map);
     }
 
     function isValidChat(data) {
       return data.participants is list && 
              data.participants.size() >= 1 &&
              request.auth.uid in data.participants &&
-             data.type in ['private', 'group', 'channel'];
+             data.type in ['private', 'group', 'channel'] &&
+             (!('name' in data) || (data.name is string && data.name.size() <= 100)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 500)) &&
+             (!('admins' in data) || data.admins is list) &&
+             (!('isPublic' in data) || data.isPublic is bool) &&
+             (!('subscriberCount' in data) || data.subscriberCount is number) &&
+             (!('lastMessage' in data) || data.lastMessage is string) &&
+             (!('lastMessageAt' in data) || data.lastMessageAt is timestamp) &&
+             (!('lastMessageSenderId' in data) || data.lastMessageSenderId is string) &&
+             (!('lastMessageReadBy' in data) || data.lastMessageReadBy is list) &&
+             (!('typing' in data) || data.typing is map) &&
+             (!('activeCall' in data) || data.activeCall is map) &&
+             (!('pinnedMessageIds' in data) || data.pinnedMessageIds is list) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     function isValidMessage(chatId, data) {
       let chat = get(/databases/$(database)/documents/chats/$(chatId)).data;
       let isChannel = chat.type == 'channel';
-      let isAdminOfChannel = isChannel && ('admins' in chat && request.auth.uid in chat.admins);
+      let isBotChat = chat.type == 'private' && 'ai-assistant-bot' in chat.participants;
+      let isAdminOfChannel = isChannel && (('admins' in chat && request.auth.uid in chat.admins) || isAdmin());
       
       return data.chatId == chatId &&
-             data.senderId == request.auth.uid &&
+             (data.senderId == request.auth.uid || (isBotChat && data.senderId == 'ai-assistant-bot')) &&
              (!('senderName' in data) || (data.senderName is string && data.senderName.size() <= 100)) &&
-             data.content is string && data.content.size() >= 1 && data.content.size() <= 1000 &&
-             data.type in ['text', 'image', 'file'] &&
-             (!isChannel || isAdminOfChannel);
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 1048576 &&
+             data.type in ['text', 'image', 'file', 'audio', 'video'] &&
+             (!isChannel || isAdminOfChannel) &&
+             (!('senderIsPremium' in data) || data.senderIsPremium is bool) &&
+             (!('reactions' in data) || data.reactions is map) &&
+             (!('deliveredTo' in data) || data.deliveredTo is list) &&
+             (!('readBy' in data) || data.readBy is list) &&
+             (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 255)) &&
+             (!('fileSize' in data) || (data.fileSize is number && data.fileSize >= 0)) &&
+             (!('isEdited' in data) || data.isEdited is bool) &&
+             (!('editedAt' in data) || data.editedAt is timestamp);
     }
 
     // ===============================================================
@@ -112,8 +157,8 @@ service cloud.firestore {
     // Users collection
     match /users/{uid} {
       allow read: if isAuthenticated();
-      allow create: if isOwner(uid) && isValidUser(request.resource.data);
-      allow update: if isOwner(uid) && isValidUser(request.resource.data);
+      allow create: if isValidUser(request.resource.data, uid);
+      allow update: if isValidUser(request.resource.data, uid) && (isOwner(uid) || isAdmin());
     }
 
     // Chats collection
@@ -121,17 +166,47 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (request.auth.uid in resource.data.participants || resource.data.isPublic == true);
       allow create: if isAuthenticated() && isValidChat(request.resource.data);
       allow update: if isAuthenticated() && (
-        // Allow updating last message for participants
-        (request.auth.uid in resource.data.participants && hasOnlyAllowedFields(request.resource.data.diff(resource.data).affectedKeys(), ['lastMessage', 'lastMessageAt', 'typing'])) ||
+        // Allow updating last message, typing, or activeCall for participants
+        (request.auth.uid in resource.data.participants && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage', 'lastMessageAt', 'lastMessageSenderId', 'lastMessageReadBy', 'typing', 'activeCall', 'pinnedMessageIds'])) ||
         // Allow joining public channels
-        (resource.data.type == 'channel' && resource.data.isPublic == true && hasOnlyAllowedFields(request.resource.data.diff(resource.data).affectedKeys(), ['participants', 'subscriberCount']))
+        (resource.data.type == 'channel' && resource.data.isPublic == true && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants', 'subscriberCount'])) ||
+        // Allow admins to update chat metadata
+        (isChatAdmin(chatId) && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'description', 'admins', 'isPublic', 'pinnedMessageIds']))
       );
+      allow delete: if isAuthenticated() && (isChatAdmin(chatId) || (resource.data.type == 'private' && request.auth.uid in resource.data.participants));
+      
+      // Signaling subcollection for WebRTC
+      match /signaling/{signalId} {
+        allow read, write: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        
+        match /{allSubcollections=**} {
+          allow read, write: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        }
+      }
       
       // Messages subcollection
       match /messages/{messageId} {
         allow read: if isAuthenticated() && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants || get(/databases/$(database)/documents/chats/$(chatId)).data.isPublic == true);
         allow create: if isAuthenticated() && isValidMessage(chatId, request.resource.data);
+        allow update: if isAuthenticated() && (
+          // Allow reactions or readBy update for participants
+          (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants && 
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'readBy', 'deliveredTo'])) ||
+          // Allow editing own message within 15 minutes
+          (resource.data.senderId == request.auth.uid && 
+           request.time < resource.data.createdAt + duration.value(15, 'm') &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'isEdited', 'editedAt']) &&
+           isValidMessage(chatId, request.resource.data))
+        );
+        allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
       }
+    }
+
+    // Test collection for connection check
+    match /test/{docId} {
+      allow read: if isAuthenticated();
     }
 
     // Default deny

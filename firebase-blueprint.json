@@ -23,13 +23,24 @@
         "participants": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs." },
         "lastMessage": { "type": "string" },
         "lastMessageAt": { "type": "string", "format": "date-time" },
+        "lastMessageSenderId": { "type": "string", "description": "UID of the last message sender." },
+        "lastMessageReadBy": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs who read the last message." },
         "type": { "type": "string", "enum": ["private", "group", "channel"] },
         "name": { "type": "string", "description": "Group or Channel name." },
         "description": { "type": "string", "description": "Channel description." },
         "typing": { "type": "object", "description": "Map of user UIDs to typing status." },
         "admins": { "type": "array", "items": { "type": "string" }, "description": "List of admin UIDs." },
         "subscriberCount": { "type": "number" },
-        "isPublic": { "type": "boolean" }
+        "isPublic": { "type": "boolean" },
+        "activeCall": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["audio", "video"] },
+            "startedAt": { "type": "string", "format": "date-time" },
+            "participants": { "type": "array", "items": { "type": "string" } },
+            "initiatorId": { "type": "string" }
+          }
+        }
       },
       "required": ["participants", "type"]
     },
@@ -42,7 +53,12 @@
         "senderId": { "type": "string" },
         "content": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "type": { "type": "string", "enum": ["text", "image", "file"] }
+        "type": { "type": "string", "enum": ["text", "image", "file", "audio", "video"] },
+        "readBy": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs who read the message." },
+        "deliveredTo": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs who received the message." },
+        "forwardedFrom": { "type": "string", "description": "UID of the original sender." },
+        "fileName": { "type": "string", "description": "Name of the shared file." },
+        "fileSize": { "type": "number", "description": "Size of the shared file in bytes." }
       },
       "required": ["chatId", "senderId", "content", "createdAt"]
     }
