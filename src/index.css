@@ -1,1 +1,32 @@
 @import "tailwindcss";
+
+/* Remove Loveable badge/watermark */
+[class*="loveable"],
+[id*="loveable"],
+.powered-by-loveable,
+#loveable-badge,
+.loveable-badge,
+.loveable-watermark,
+[data-testid*="loveable"],
+iframe[src*="loveable"],
+script[src*="loveable"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Hide any powered by branding */
+[class*="powered"],
+[class*="branding"],
+.watermark,
+.badge-watermark,
+footer[class*="loveable"],
+div[class*="footer-branding"] {
+  display: none !important;
+}
+
+/* Remove any fixed/absolute positioned elements that might be the badge */
+body > div:last-child:not(#root) {
+  display: none !important;
+}
